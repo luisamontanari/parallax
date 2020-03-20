@@ -1,0 +1,92 @@
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    display: flex;
+    flex-direction: column;
+}
+
+.metro {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    margin: 0px 10vw;
+}
+
+.metro > div {
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    border: 2px #FF45DB solid;
+    background: transparent;
+    transition: background 0.1s ease-in, opacity 0.1s ease-in;
+    opacity: 0.7;
+    box-sizing: border-box;
+}
+
+.metro > .done {
+    opacity: 1 !important;
+    background: #FF45DB;
+    animation-duration: 0.7s;
+    animation-iteration-count: 1;
+    animation-name: bounce;
+    animation-timing-function: cubic-bezier(.22,.55,.5,.84);
+}
+
+@keyframes bounce {
+    0%   { transform: scale(1,1)       translate(0, 0); }
+    10%  { transform: scale(1.1,0.9)   translate(0, 0); }
+    30%  { transform: scale(.9,1.1)    translate(-10px, -65px); }
+    50%  { transform: scale(1.05,0.95) translate(0, 0); }
+    57%  { transform: scale(1,1)       translate(1px, -2px); }
+    64%  { transform: scale(1,1)       translate(0,0); }
+    100% { transform: scale(1,1)       translate(0,0); }
+}
+
+@keyframes bounce-quarter {
+    0%   { transform: scale(1,0.45)      translate(0, 0); }
+    10%  { transform: scale(1.1,0.4)     translate(0, 0)         rotate(0deg); }
+    30%  { transform: scale(.9,0.5)      translate(-10px, -80px) rotate(-15deg); }
+    50%  { transform: scale(1.05,0.42)   translate(0, 0)         rotate(0deg); }
+    57%  { transform: scale(1,0.45)      translate(1px, -2px)    rotate(2deg); }
+    64%  { transform: scale(1,0.45)      translate(0,0)          rotate(0deg); }
+    100% { transform: scale(1,0.45)      translate(0,0); }
+}
+
+@keyframes bounce-first {
+    0%   { transform: scale(1,0.75)      translate(0, 0); }
+    10%  { transform: scale(1.1,0.68)    translate(0, 0)         rotate(0deg); }
+    30%  { transform: scale(.9,0.8)      translate(-10px, -80px) rotate(-15deg); }
+    50%  { transform: scale(1.05,0.7)    translate(0, 0)         rotate(0deg); }
+    57%  { transform: scale(1,0.75)      translate(1px, -2px)    rotate(2deg); }
+    64%  { transform: scale(1,0.75)      translate(0,0)          rotate(0deg); }
+    100% { transform: scale(1,0.75)      translate(0,0); }
+}
+
+.metro > .quarter.done {
+    background: transparent;
+    animation-name: bounce-quarter;
+}
+
+.metro > .first.quarter.done {
+    animation-name: bounce-first;
+}
+
+.metro > .quarter {
+    width: 0;
+    height: 0;
+    border: none;
+    border-radius: 0px;
+    border-top: 15px solid transparent;
+    border-bottom: 15px solid transparent;
+    border-left: 15px solid #E83369;
+    box-sizing: content-box;
+    opacity: 0.4;
+    transform: scaleY(0.45);
+}
+
+.metro > .quarter.first {
+    border-top: 30px solid transparent;
+    border-bottom: 30px solid transparent;
+    border-left: 30px solid #FF4438;
+    box-sizing: content-box;
+    transform: scaleY(0.75);
+}

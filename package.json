@@ -1,0 +1,26 @@
+{
+  "name": "21th-century-organ",
+  "version": "0.0.1",
+  "description": "A 21st century organ",
+  "main": "index.js",
+  "scripts": {
+    "start": "reload -b",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luisamontanari/parallax.git"
+  },
+  "author": "Luisa Montanari, Martin Haug",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/luisamontanari/parallax/issues"
+  },
+  "homepage": "https://github.com/luisamontanari/parallax#readme",
+  "devDependencies": {
+    "reload": "^3.0.4"
+  },
+  "dependencies": {
+    "@magenta/music": "^1.14.0"
+  }
+}
