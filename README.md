@@ -12,6 +12,6 @@ npm start
 ```
 
 ## Usage
-Open the app in the browser and start hitting the 1-8 or asdfghjk keys to play
+Open the app in the browser and start hitting the 1-8 or `asdfghjk` keys to play
 some notes (app ready once metronome starts rolling). Note that your 8-key input
 will be intelligently mapped to the full range of piano keys.

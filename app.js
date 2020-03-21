@@ -4,8 +4,10 @@
 const heldButtonToVisualData = new Map();
 const BUTTON_MAPPING = {0:0, 1:1, 2:2, 3:3, 4:4, 5:5, 6:6, 7:7};
 const BUTTONS_DEVICE = ['a','s','d','f','j','k','l',';'];
-/** @type {HTMLDivElement} */
+/** @type {HTMLDivElement[]} */
 const metronomeDoms = [];
+/** @type {HTMLButtonElement[]} */
+const buttonDoms = [];
 const NUM_BUTTONS = 8;
 const TEMPERATURE = 1;
 let keyWhitelist = [...Array(88).keys()];
@@ -68,19 +70,48 @@ const domReadyPs = new Promise((resolve) => {
         document.addEventListener('keydown',onKeyDown);
         document.addEventListener('keyup', onKeyUp);
         metronomeDoms.push(...Array.from(document.querySelectorAll('.metro > *')));
+        buttonDoms.push(...Array.from(document.querySelectorAll('.keys > button')));
+
+        buttonDoms.forEach(e => {
+            e.addEventListener("mousedown",   onBtnDown);
+            e.addEventListener("mouseup",     onBtnUp);
+            // We need seperate touch event handlers due to the way
+            // that browsers handle touch and mouse inputs seperately.
+            // Without them, we could not sustain a note or play multiple
+            // notes at once on a touchscreen.
+            e.addEventListener("touchstart",  onBtnTouchDown);
+            e.addEventListener("touchend",    onBtnTouchUp);
+            e.addEventListener("touchcancel", onBtnTouchUp);
+        });
 
         resolve();
     })
 })
 
 Promise.all([genieReadyPs, domReadyPs]).then(() => {
-    const metronome = new mm.Metronome({bar: () => {}, click: (time, index) => {
+    // NOTE MagentaJS is shipping the Tone.JS library as a static member
+    // of Player
+    const vol = new mm.Player.tone.Volume(-40);
+    const hiClick = new mm.Player.tone.MembraneSynth({pitchDecay: 0.008,envelope: {attack: 0.001, decay: 0.3, sustain: 0}});
+    const loClick = new mm.Player.tone.MembraneSynth({pitchDecay: 0.008,envelope: {attack: 0.001, decay: 0.3, sustain: 0}});
+    hiClick.chain(vol, mm.Player.tone.Master);
+    loClick.chain(vol, mm.Player.tone.Master);
+
+    // The metronome would normally make a sound at each click -- we need the
+    // click count to be high for the visual aid but do not want to have audible
+    // clicks that frequently. Therefore we mute it and generate the clicks
+    // manually for each quarter.
+    const metronome = new mm.Metronome({bar: (time) => {
+        hiClick.triggerAttackRelease('g5', '8n');
+    }, click: (time, index) => {
         if (index === 0) {
             metronomeDoms.forEach(e => e.classList.remove("done"));
             void metronomeDoms[0].offsetWidth;
         }
         metronomeDoms[index].classList.add("done");
-    }, quarter: () => {}}, 4)
+    }, quarter: (time, index) => {
+        if (index > 0) loClick.triggerAttackRelease('c5', '8n');
+    }}, 4)
     metronome.start();
     metronome.muted = true;
 
@@ -122,7 +153,13 @@ function onKeyUp(event) {
         sustaining = false;
 
         // Release everything.
-        sustainingNotes.forEach((note) => player.playNoteUp(note, -1));
+        sustainingNotes.forEach((note) => {
+            try {
+                player.playNoteUp(note, -1);
+            } catch (e) {
+                console.log(e);
+            }
+        });
         sustainingNotes = [];
     } else {
         const button = getButtonFromKeyCode(event.key);
@@ -132,11 +169,60 @@ function onKeyUp(event) {
     }
 }
 
+/**
+ * To be triggered if a UI button is held down
+ * @param {MouseEvent} args
+ */
+function onBtnDown(args) {
+    const buttonIndex = buttonDoms.indexOf(args.currentTarget);
+    if (buttonIndex < 0 || buttonIndex > NUM_BUTTONS) return;
+
+    buttonDown(buttonIndex, true);
+}
+
+/**
+ * To be triggered if a UI button is released
+ * @param {MouseEvent} args
+ */
+function onBtnUp(args) {
+    const buttonIndex = buttonDoms.indexOf(args.currentTarget);
+    if (buttonIndex < 0 || buttonIndex > NUM_BUTTONS) return;
+
+    buttonUp(buttonIndex, true);
+}
+
+/**
+ * To be triggered if a UI button is held down
+ * @param {TouchEvent} args
+ */
+function onBtnTouchDown(args) {
+    const buttonIndex = buttonDoms.indexOf(args.currentTarget);
+    if (buttonIndex < 0 || buttonIndex > NUM_BUTTONS) return;
+
+    // We need to prevent things like zooming that would be standard behavior
+    // for multi-touch. Instead, multiple buttons should be able to be pressed
+    // at once.
+    args.preventDefault();
+
+    buttonDown(buttonIndex, true);
+}
+
+/**
+ * To be triggered if a UI button is released
+ * @param {TouchEvent} args
+ */
+function onBtnTouchUp(args) {
+    const buttonIndex = buttonDoms.indexOf(args.currentTarget);
+    if (buttonIndex < 0 || buttonIndex > NUM_BUTTONS) return;
+
+    buttonUp(buttonIndex, true);
+}
+
 function buttonDown(button, fromKeyDown) {
     // If we're already holding this button down, nothing new to do.
-    if (heldButtonToVisualData.has(button)) {
-        return;
-    }
+    if (heldButtonToVisualData.has(button)) return;
+
+    buttonDoms[button].classList.add("active");
 
     const note = genie.nextFromKeyWhitelist(BUTTON_MAPPING[button], keyWhitelist, TEMPERATURE);
     const pitch = CONSTANTS.LOWEST_PIANO_KEY_MIDI_NOTE + note;
@@ -152,14 +238,24 @@ function buttonUp(button) {
         // Maybe stop hearing it.
         const pitch = CONSTANTS.LOWEST_PIANO_KEY_MIDI_NOTE + thing.note;
         if (!sustaining) {
-            player.playNoteUp(pitch, button);
+            try {
+                player.playNoteUp(pitch, button);
+            } catch (e) {
+                console.log(e);
+            }
         } else {
             sustainingNotes.push(CONSTANTS.LOWEST_PIANO_KEY_MIDI_NOTE + thing.note);
         }
     }
+    buttonDoms[button].classList.remove("active");
+
     heldButtonToVisualData.delete(button);
 }
 
+/**
+ * Will return the button index for a keyboard char string
+ * @param {string} key
+ */
 function getButtonFromKeyCode(key) {
     // 1 - 8
     if (key >= '1' && key <= String(NUM_BUTTONS)) {
