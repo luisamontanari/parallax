@@ -2,63 +2,25 @@
 "use strict"
 
 const heldButtonToVisualData = new Map();
-const BUTTON_MAPPING = {0:0, 1:1, 2:2, 3:3, 4:4, 5:5, 6:6, 7:7};
-const BUTTONS_DEVICE = ['a','s','d','f','j','k','l',';'];
-/** @type {HTMLDivElement[]} */
-const metronomeDoms = [];
+const BUTTON_MAPPING         = {0:0, 1:1, 2:2, 3:3, 4:4, 5:5, 6:6, 7:7};
+const BUTTONS_DEVICE         = ['a','s','d','f','j','k','l',';'];
+/** @type {HTMLDivElement[]}    */
+const metronomeDoms          = [];
 /** @type {HTMLButtonElement[]} */
-const buttonDoms = [];
-const NUM_BUTTONS = 8;
-const TEMPERATURE = 1;
+const buttonDoms             = [];
+const NUM_BUTTONS            = 8;
+const TEMPERATURE            = 1;
+const METRONOME_CLICKS       = 4;
+const MS_CLICK_LEARNING_RATE = 0.1;
+const STEPS_PER_QUARTER_REC  = 48;
+let barNotes     = [];
+let bpm          = 120;
+let msPerClick   = bpmToMsPerClick(bpm);
 let keyWhitelist = [...Array(88).keys()];
-let sustaining = false;
-
-// const TWINKLE_TWINKLE = {
-//     notes: [
-//         {pitch: 60, startTime: 0.0, endTime: 0.5},
-//         {pitch: 60, startTime: 0.5, endTime: 1.0},
-//         {pitch: 67, startTime: 1.0, endTime: 1.5},
-//         {pitch: 67, startTime: 1.5, endTime: 2.0},
-//         {pitch: 69, startTime: 2.0, endTime: 2.5},
-//         {pitch: 69, startTime: 2.5, endTime: 3.0},
-//         {pitch: 67, startTime: 3.0, endTime: 4.0},
-//         {pitch: 65, startTime: 4.0, endTime: 4.5},
-//         {pitch: 65, startTime: 4.5, endTime: 5.0},
-//         {pitch: 64, startTime: 5.0, endTime: 5.5},
-//         {pitch: 64, startTime: 5.5, endTime: 6.0},
-//         {pitch: 62, startTime: 6.0, endTime: 6.5},
-//         {pitch: 62, startTime: 6.5, endTime: 7.0},
-//         {pitch: 60, startTime: 7.0, endTime: 8.0},
-//     ],
-//     totalTime: 8
-// };
-
-// const DRUMS = {
-//     notes: [
-//         { pitch: 36, quantizedStartStep: 0, quantizedEndStep: 1, isDrum: true },
-//         { pitch: 38, quantizedStartStep: 0, quantizedEndStep: 1, isDrum: true },
-//         { pitch: 42, quantizedStartStep: 0, quantizedEndStep: 1, isDrum: true },
-//         { pitch: 46, quantizedStartStep: 0, quantizedEndStep: 1, isDrum: true },
-//         { pitch: 42, quantizedStartStep: 2, quantizedEndStep: 3, isDrum: true },
-//         { pitch: 42, quantizedStartStep: 3, quantizedEndStep: 4, isDrum: true },
-//         { pitch: 42, quantizedStartStep: 4, quantizedEndStep: 5, isDrum: true },
-//         { pitch: 50, quantizedStartStep: 4, quantizedEndStep: 5, isDrum: true },
-//         { pitch: 36, quantizedStartStep: 6, quantizedEndStep: 7, isDrum: true },
-//         { pitch: 38, quantizedStartStep: 6, quantizedEndStep: 7, isDrum: true },
-//         { pitch: 42, quantizedStartStep: 6, quantizedEndStep: 7, isDrum: true },
-//         { pitch: 45, quantizedStartStep: 6, quantizedEndStep: 7, isDrum: true },
-//         { pitch: 36, quantizedStartStep: 8, quantizedEndStep: 9, isDrum: true },
-//         { pitch: 42, quantizedStartStep: 8, quantizedEndStep: 9, isDrum: true },
-//         { pitch: 46, quantizedStartStep: 8, quantizedEndStep: 9, isDrum: true },
-//         { pitch: 42, quantizedStartStep: 10, quantizedEndStep: 11, isDrum: true },
-//         { pitch: 48, quantizedStartStep: 10, quantizedEndStep: 11, isDrum: true },
-//         { pitch: 50, quantizedStartStep: 10, quantizedEndStep: 11, isDrum: true },
-//     ],
-//     quantizationInfo: {stepsPerQuarter: 4},
-//     tempos: [{time: 0, qpm: 120}],
-//     totalQuantizedSteps: 11
-// };
-
+let sustaining   = false;
+let lastTickTime = NaN;
+let currentClick = 0;
+let currentBar   = 0;
 
 const genie = new mm.PianoGenie(CONSTANTS.GENIE_CHECKPOINT);
 const genieReadyPs = genie.initialize();
@@ -89,11 +51,17 @@ const domReadyPs = new Promise((resolve) => {
 })
 
 Promise.all([genieReadyPs, domReadyPs]).then(() => {
+    const clickProperties = {
+        pitchDecay: 0.008,
+        envelope: {attack: 0.001, decay: 0.3, sustain: 0},
+    };
+
     // NOTE MagentaJS is shipping the Tone.JS library as a static member
     // of Player
+    const hiClick = new mm.Player.tone.MembraneSynth(clickProperties);
+    const loClick = new mm.Player.tone.MembraneSynth(clickProperties);
+
     const vol = new mm.Player.tone.Volume(-40);
-    const hiClick = new mm.Player.tone.MembraneSynth({pitchDecay: 0.008,envelope: {attack: 0.001, decay: 0.3, sustain: 0}});
-    const loClick = new mm.Player.tone.MembraneSynth({pitchDecay: 0.008,envelope: {attack: 0.001, decay: 0.3, sustain: 0}});
     hiClick.chain(vol, mm.Player.tone.Master);
     loClick.chain(vol, mm.Player.tone.Master);
 
@@ -101,34 +69,85 @@ Promise.all([genieReadyPs, domReadyPs]).then(() => {
     // click count to be high for the visual aid but do not want to have audible
     // clicks that frequently. Therefore we mute it and generate the clicks
     // manually for each quarter.
-    const metronome = new mm.Metronome({bar: (time) => {
+    const metronome = new mm.Metronome({bar: (time, index) => {
+        currentBar = index;
+        // This log contains a Magenta quantized note sequence of all notes
+        // completed in the last bar
+        // TODO The note sequence does not contain any keys that are held when
+        //      the next measure begins -- include them in barNotes here.
+        console.log(generateQuantizedSequence(barNotes));
+        barNotes.splice(0, barNotes.length);
         hiClick.triggerAttackRelease('g5', '8n');
     }, click: (time, index) => {
+        const clickTimestamp = Date.now();
+        currentClick = index;
         if (index === 0) {
+            // Remove all elements from the lastTick array
             metronomeDoms.forEach(e => e.classList.remove("done"));
             void metronomeDoms[0].offsetWidth;
         }
         metronomeDoms[index].classList.add("done");
+
+        msPerClick = isNaN(lastTickTime)
+            ? msPerClick
+            : msPerClick + MS_CLICK_LEARNING_RATE * ((clickTimestamp - lastTickTime) - msPerClick);
+        lastTickTime = clickTimestamp;
     }, quarter: (time, index) => {
         if (index > 0) loClick.triggerAttackRelease('c5', '8n');
     }}, 4)
     metronome.start();
     metronome.muted = true;
 
-    // TODO Save PianoGenie output as note sequence
     // TODO Play MusicRNN sequence in next bar
 
     // TODO Run in kiosk-mode chrome on Raspberry Pi
 
     // TODO STRETCH visualize the MusicRNN output using a
-    // mm.PianoRollSVGVisualizer?
+    //              mm.PianoRollSVGVisualizer?
     // TODO STRETCH Switch conditioning of PianoGenie with extra
-    // keys / programatically
+    //              keys / programatically
 
     // NOTE @magenta/music docs are available at https://magenta.github.io/magenta-js/music/index.html,
-    // demos at https://magenta.github.io/magenta-js/music/demos/, both a bit
-    // hard to find on Google
+    //      demos at https://magenta.github.io/magenta-js/music/demos/, both a
+    //      bit hard to find on Google
 })
+
+/**
+ * Will calculate the target amount of ms per metronome click
+ * @param {number} speed The bpm value to convert
+ */
+function bpmToMsPerClick(speed) {
+    return (60 * 1000) / (speed * METRONOME_CLICKS);
+}
+
+/**
+ * Will convert a timestamp to the current step count w.r.t. the current
+ * resolution of metronome and recording and metronome click
+ * @param {number} ts The timestamp at which the event has occurred
+ */
+function getStepCountFromTimestamp(ts) {
+    const diffToLastMetroClick = ts - lastTickTime;
+    const msPerRecordingBeat = (msPerClick * METRONOME_CLICKS) / STEPS_PER_QUARTER_REC;
+
+    const stepOffset = (currentClick / METRONOME_CLICKS) * STEPS_PER_QUARTER_REC;
+
+    return Math.floor((diffToLastMetroClick / msPerRecordingBeat) + stepOffset)
+}
+
+function generateQuantizedSequence(notes) {
+    const newNotes = notes.slice(0).map(e => {
+        if (e.startBar !== e.endBar) {
+            e.quantizedStartStep = 0
+        }
+        return e;
+    });
+    return {
+        notes: newNotes,
+        quantizationInfo: {stepsPerQuarter: STEPS_PER_QUARTER_REC},
+        tempos: [{time: 0, qpm: bpm}],
+        totalQuantizedSteps: STEPS_PER_QUARTER_REC * 4,
+    }
+}
 
 function onKeyDown(event) {
     // Keydown fires continuously and we don't want that.
@@ -229,7 +248,11 @@ function buttonDown(button, fromKeyDown) {
 
     // Hear it.
     player.playNoteDown(pitch, button);
-    heldButtonToVisualData.set(button, {note:note});
+    heldButtonToVisualData.set(button, {
+        note: note,
+        quantizedStartStep: getStepCountFromTimestamp(Date.now()),
+        startBar: currentBar,
+    });
 }
 
 function buttonUp(button) {
@@ -246,6 +269,10 @@ function buttonUp(button) {
         } else {
             sustainingNotes.push(CONSTANTS.LOWEST_PIANO_KEY_MIDI_NOTE + thing.note);
         }
+        thing.quantizedEndStep = getStepCountFromTimestamp(Date.now());
+        thing.pitch = pitch;
+        thing.endBar = currentBar;
+        barNotes.push(thing);
     }
     buttonDoms[button].classList.remove("active");
 
