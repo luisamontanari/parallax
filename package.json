@@ -18,7 +18,7 @@
   },
   "homepage": "https://github.com/luisamontanari/parallax#readme",
   "devDependencies": {
-    "reload": "^3.0.4"
+    "reload": "^3.2.1"
   },
   "dependencies": {
     "@magenta/music": "^1.14.0"
